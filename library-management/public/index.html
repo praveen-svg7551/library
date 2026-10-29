@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library Management System</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1c2333;--mut:#667085;--pri:#1f3a6e;--on:#fff;--line:#e4e7ee;--ok:#15803d;--err:#b91c1c;--chip:#e8eef9}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#182033;--ink:#e8ecf5;--mut:#9aa4b8;--pri:#6f98e8;--on:#0f1420;--line:#2a3350;--ok:#4ade80;--err:#f87171;--chip:#222c47}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--pri);color:var(--on);padding:18px 20px}
+header h1{margin:0;font-size:20px}header p{margin:2px 0 0;opacity:.85;font-size:13px}
+main{max-width:1000px;margin:0 auto;padding:16px;display:grid;gap:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+h2{margin:0 0 12px;font-size:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input,select,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input{flex:1;min-width:120px}
+button{background:var(--pri);color:var(--on);border:0;cursor:pointer;font-weight:600}
+button.sec{background:var(--chip);color:var(--ink)}button.del{background:transparent;color:var(--err);padding:4px 8px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{background:var(--chip);border-radius:10px;padding:10px;text-align:center}.stat b{display:block;font-size:22px}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:520px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-size:12px;text-transform:uppercase}
+.tag{display:inline-block;background:var(--chip);border-radius:20px;padding:1px 9px;font-size:12px;margin:1px}
+.low{color:var(--err);font-weight:600}.good{color:var(--ok);font-weight:600}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);padding:10px 16px;border-radius:10px;color:#fff;display:none;max-width:90%}
+</style>
+</head>
+<body>
+<header><h1>📚 Library Management System</h1><p>Java backend · Collections · File I/O · REST API · hosted on Vercel</p></header>
+<main>
+  <div class="stats">
+    <div class="stat"><b id="sTitles">0</b>Titles</div>
+    <div class="stat"><b id="sAvail">0</b>Copies available</div>
+    <div class="stat"><b id="sMembers">0</b>Members</div>
+  </div>
+
+  <section>
+    <h2>Issue / Return a book</h2>
+    <div class="row">
+      <select id="selMember"></select>
+      <select id="selBook"></select>
+      <button id="btnIssue">Issue</button>
+      <button id="btnReturn" class="sec">Return</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Books</h2>
+    <form id="bookForm" class="row" style="margin-bottom:12px">
+      <input name="title" placeholder="Title" required>
+      <input name="author" placeholder="Author" required>
+      <input name="copies" type="number" min="1" max="100" value="1" style="max-width:90px" aria-label="Copies">
+      <button>Add book</button>
+    </form>
+    <input id="search" placeholder="Search by title or author…" style="width:100%;margin-bottom:10px">
+    <div class="scroll"><table><thead><tr><th>ID</th><th>Title</th><th>Author</th><th>Available</th><th></th></tr></thead><tbody id="books"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Members</h2>
+    <form id="memberForm" class="row" style="margin-bottom:12px">
+      <input name="name" placeholder="Member name" required><button>Add member</button>
+    </form>
+    <div class="scroll"><table><thead><tr><th>ID</th><th>Name</th><th>Borrowed (max 3)</th></tr></thead><tbody id="members"></tbody></table></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+let books = [], members = [];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, method = 'GET', data) {
+  const opt = { method };
+  if (data) { opt.headers = {'Content-Type':'application/x-www-form-urlencoded'}; opt.body = new URLSearchParams(data); }
+  const res = await fetch('/api/' + path, opt);
+  let json = {};
+  try { json = await res.json(); } catch (e) { throw new Error('Backend not reachable. Check the Render URL in vercel.json.'); }
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
+}
+function toast(msg, bad) {
+  const t = $('#toast'); t.textContent = msg; t.style.background = bad ? '#b91c1c' : '#15803d'; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 3000);
+}
+async function run(fn, okMsg) {
+  try { await fn(); if (okMsg) toast(okMsg); await refresh(); } catch (e) { toast(e.message, true); }
+}
+async function refresh() {
+  [books, members] = await Promise.all([api('books'), api('members')]);
+  render();
+}
+function render() {
+  const q = $('#search').value.toLowerCase();
+  $('#sTitles').textContent = books.length;
+  $('#sAvail').textContent = books.reduce((a, b) => a + b.available, 0);
+  $('#sMembers').textContent = members.length;
+  $('#books').innerHTML = books
+    .filter(b => (b.title + ' ' + b.author).toLowerCase().includes(q))
+    .map(b => `<tr><td>${b.id}</td><td>${esc(b.title)}</td><td>${esc(b.author)}</td>
+      <td class="${b.available ? 'good' : 'low'}">${b.available} / ${b.total}</td>
+      <td><button class="del" data-del="${b.id}">Remove</button></td></tr>`).join('')
+    || '<tr><td colspan="5">No books found.</td></tr>';
+  const title = id => (books.find(b => b.id === id) || {}).title || ('#' + id);
+  $('#members').innerHTML = members.map(m => `<tr><td>${m.id}</td><td>${esc(m.name)}</td>
+    <td>${m.borrowed.map(id => `<span class="tag">${esc(title(id))}</span>`).join('') || '—'}</td></tr>`).join('')
+    || '<tr><td colspan="3">No members yet.</td></tr>';
+  const sm = $('#selMember').value, sb = $('#selBook').value;
+  $('#selMember').innerHTML = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  $('#selBook').innerHTML = books.map(b => `<option value="${b.id}">${esc(b.title)}</option>`).join('');
+  if (sm) $('#selMember').value = sm; if (sb) $('#selBook').value = sb;
+}
+$('#bookForm').onsubmit = e => { e.preventDefault(); const f = e.target;
+  run(async () => { await api('books', 'POST', Object.fromEntries(new FormData(f))); f.reset(); }, 'Book added'); };
+$('#memberForm').onsubmit = e => { e.preventDefault(); const f = e.target;
+  run(async () => { await api('members', 'POST', Object.fromEntries(new FormData(f))); f.reset(); }, 'Member added'); };
+$('#btnIssue').onclick = () => run(() => api('issue', 'POST', { memberId: $('#selMember').value, bookId: $('#selBook').value }), 'Book issued');
+$('#btnReturn').onclick = () => run(() => api('return', 'POST', { memberId: $('#selMember').value, bookId: $('#selBook').value }), 'Book returned');
+$('#books').onclick = e => { const id = e.target.dataset.del; if (id && confirm('Remove this book?')) run(() => api('delete', 'POST', { bookId: id }), 'Book removed'); };
+$('#search').oninput = render;
+refresh().catch(e => toast(e.message, true));
+</script>
+</body>
+</html>
