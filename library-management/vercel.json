@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://YOUR-APP-NAME.onrender.com/api/:path*" }
+    { "source": "/api/:path*", "destination": " https://library-lnz1.onrender.com/api/:path*" }
   ]
 }
